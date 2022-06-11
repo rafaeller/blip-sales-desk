@@ -138,16 +138,6 @@ app.use('/webhook', (req, res) => {
     
 })
 
-app.use('/ticket/:id', (req, res) => {
-    res.render('ticket/index.html',{ticketId:req.params.id});
-})
-
-app.use('/', (req, res) => {
-    res.render('index.html');
-})
-
-let messages = [];
-
 let tickets = [];
 
 
