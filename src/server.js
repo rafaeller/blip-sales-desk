@@ -9,8 +9,8 @@ const io = require("socket.io")(server, {
     cors: {
         origin: "http://localhost:3001",
         methods: ["GET", "POST"]
-      }
-  });
+    }
+});
 
 app.use(express.json())
 app.use(express.static(path.join(__dirname, 'public')));
@@ -21,25 +21,26 @@ app.set('view engine', 'html');
 const TYPE_TICKET = "application/vnd.iris.ticket+json";
 const TYPE_TEXT = "text/plain";
 
-const HEADERS = {
+const BOT_HEADERS = {
     headers: {
-       Authorization: "<BOTKEY>"
+        "Content-Type": "application/json",
+        "Authorization": "<BOTKEY>"
     }
-  }
+}
 
 function openTicket(ticketId) {
     axios.post('https://http.msging.net/commands', {
-            id: uuid.v4(),
-            to: "postmaster@desk.msging.net",
-            method: "set",
-            uri: "/tickets/change-status",
-            type: "application/vnd.iris.ticket+json",
-            resource: {
-                id: ticketId,
-                status: "Open",
-                agentIdentity: "superAgent"
-            }
-        }, HEADERS)
+        id: uuid.v4(),
+        to: "postmaster@desk.msging.net",
+        method: "set",
+        uri: "/tickets/change-status",
+        type: "application/vnd.iris.ticket+json",
+        resource: {
+            id: ticketId,
+            status: "Open",
+            agentIdentity: "superAgent"
+        }
+    }, BOT_HEADERS)
         .then(function (response) {
             console.log(response.data);
         })
@@ -50,11 +51,11 @@ function openTicket(ticketId) {
 
 function sendMessage(ticketId, content) {
     axios.post('https://http.msging.net/messages', {
-            "type": "text/plain",
-            "content": content,
-            "id": uuid.v4(),
-            "to": `${ticketId}@desk.msging.net/Webhook`
-        }, HEADERS)
+        "type": "text/plain",
+        "content": content,
+        "id": uuid.v4(),
+        "to": `${ticketId}@desk.msging.net/Webhook`
+    }, BOT_HEADERS)
         .then(function (response) {
             console.log({
                 "type": "text/plain",
@@ -70,11 +71,11 @@ function sendMessage(ticketId, content) {
 
 function getAllTickets(socketId) {
     axios.post('https://http.msging.net/commands', {
-            "id": uuid.v4(),
-            "method": "get",
-            "uri": "/monitoring/open-tickets?version=2",
-            "to": `postmaster@desk.msging.net`
-        }, HEADERS)
+        "id": uuid.v4(),
+        "method": "get",
+        "uri": "/monitoring/open-tickets?version=2",
+        "to": `postmaster@desk.msging.net`
+    }, BOT_HEADERS)
         .then(function (response) {
             io.to(socketId).emit('openTickets', response.data.resource.items.sort((a, b) => b.sequentialId - a.sequentialId));
         })
@@ -84,45 +85,44 @@ function getAllTickets(socketId) {
 }
 
 function getLastMessages(customerIdentity, socketId) {
-    if(customerIdentity.includes('@tunnel.msging.net')){
+    if (customerIdentity.includes('@tunnel.msging.net')) {
         axios.post('https://http.msging.net/commands', {
             "id": uuid.v4(),
             "method": "get",
             "uri": `/contacts/${customerIdentity}`,
-        }, HEADERS)
-        .then(function (response) {
-            axios.post('https://http.msging.net/commands', {
-                "id": uuid.v4(),
-                "method": "get",
-                "uri": `lime://${response.data.resource.extras['tunnel.owner']}/threads/${response.data.resource.extras['tunnel.originator']}?$take=20&refreshExpiredMedia=true`,
-            }, HEADERS)
+        }, BOT_HEADERS)
+            .then(function (response) {
+                axios.post('https://http.msging.net/commands', {
+                    "id": uuid.v4(),
+                    "method": "get",
+                    "uri": `lime://${response.data.resource.extras['tunnel.owner']}/threads/${response.data.resource.extras['tunnel.originator']}?$take=20&refreshExpiredMedia=true`,
+                }, BOT_HEADERS)
+                    .then(function (response) {
+                        io.to(socketId).emit('lastMessages', response.data.resource.items.sort((a, b) => new Date(a.date) - new Date(b.date)));
+                    })
+                    .catch(function (error) {
+                        console.log(error);
+                    });
+            })
+            .catch(function (error) {
+                console.log(error);
+            });
+    } else {
+        axios.post('https://http.msging.net/commands', {
+            "id": uuid.v4(),
+            "method": "get",
+            "uri": `/threads/${customerIdentity}?$take=20&refreshExpiredMedia=true`,
+        }, BOT_HEADERS)
             .then(function (response) {
                 io.to(socketId).emit('lastMessages', response.data.resource.items.sort((a, b) => new Date(a.date) - new Date(b.date)));
             })
             .catch(function (error) {
                 console.log(error);
             });
-        })
-        .catch(function (error) {
-            console.log(error);
-        });
-    } else{
-        axios.post('https://http.msging.net/commands', {
-            "id": uuid.v4(),
-            "method": "get",
-            "uri": `/threads/${customerIdentity}?$take=20&refreshExpiredMedia=true`,
-        }, HEADERS)
-        .then(function (response) {
-            io.to(socketId).emit('lastMessages', response.data.resource.items.sort((a, b) => new Date(a.date) - new Date(b.date)));
-        })
-        .catch(function (error) {
-            console.log(error);
-        });
     }
 }
 
 app.use('/webhook', (req, res) => {
-    
     if (req.body.type === TYPE_TICKET) {
         console.log(req.body);
         ticketId = req.body.content.id;
@@ -131,11 +131,11 @@ app.use('/webhook', (req, res) => {
     }
     ticketId = req.body.from.split("@")[0];
     ticket = getTicket(ticketId);
-    if (req.body.type === TYPE_TEXT && ticket){
-        io.to(ticket.socketId).emit("recivedMessage", {type:'customer', ticketId: ticket.ticketId, content:req.body.content})
+    if (req.body.type === TYPE_TEXT && ticket) {
+        io.to(ticket.socketId).emit("recivedMessage", { type: 'customer', ticketId: ticket.ticketId, content: req.body.content })
         res.sendStatus(200);
     }
-    
+
 })
 
 let tickets = [];
@@ -170,7 +170,7 @@ io.on('connection', socket => {
     socket.on('ticketConnect', data => {
         addTicket(data.ticketId, socket.id);
         getLastMessages(data.customerIdentity, socket.id);
-    });    
+    });
 
     socket.on('sendMessage', data => {
         sendMessage(data.ticketId, data.content)
