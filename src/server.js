@@ -1,5 +1,5 @@
 const express = require('express');
-const path = require('path');
+const https = require('https');
 const axios = require('axios');
 var uuid = require('uuid');
 
@@ -12,11 +12,14 @@ const io = require("socket.io")(server, {
     }
 });
 
+const instance = axios.create({
+    httpsAgent: new https.Agent({  
+        rejectUnauthorized: false
+    })
+});
+
+
 app.use(express.json())
-app.use(express.static(path.join(__dirname, 'public')));
-app.set('views', path.join(__dirname, 'public'));
-app.engine('html', require('ejs').renderFile);
-app.set('view engine', 'html');
 
 const TYPE_TICKET = "application/vnd.iris.ticket+json";
 const TYPE_TEXT = "text/plain";
@@ -24,8 +27,22 @@ const TYPE_TEXT = "text/plain";
 const BOT_HEADERS = {
     headers: {
         "Content-Type": "application/json",
-        "Authorization": "<BOTKEY>"
+        "Authorization": "<BOT KEY>"
     }
+}
+
+const CONTENT_MODERATOR_HEADERS = {
+    "Content-Type": "text/plain",
+    "Ocp-Apim-Subscription-Key": "<AZERE KEY>",
+    "charset": "utf-8"
+}
+
+
+const checkContentModeratorAsync = async(input) => {
+    response = await instance.post('https://brazilsouth.api.cognitive.microsoft.com/contentmoderator/moderate/v1.0/ProcessText/Screen?autocorrect=true&classify=True&language=por',
+        input,
+        {headers: CONTENT_MODERATOR_HEADERS});
+    return response.data
 }
 
 function openTicket(ticketId) {
@@ -172,9 +189,17 @@ io.on('connection', socket => {
         getLastMessages(data.customerIdentity, socket.id);
     });
 
-    socket.on('sendMessage', data => {
-        sendMessage(data.ticketId, data.content)
-        console.log(data);
+    socket.on('sendMessage', async (data) => {
+        contentModerator = await checkContentModeratorAsync(data.content)
+        console.log(contentModerator)
+        if (contentModerator.Terms === null) {
+            data.content = contentModerator.AutoCorrectedText
+            sendMessage(data.ticketId, data.content)
+            io.to(socket.id).emit("recivedMessage", data)
+            console.log(data);
+        }else{
+            console.log('mensagem ofensiva');
+        }
     });
 })
 

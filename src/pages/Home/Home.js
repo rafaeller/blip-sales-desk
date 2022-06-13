@@ -51,7 +51,6 @@ const Home = () => {
                 type: "agent",
                 ticketId
             };
-            addMessage(message);
             socket.emit('sendMessage', message);
             setInput('');
         }
