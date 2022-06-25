@@ -71,7 +71,6 @@
     "testEnvironment": "jsdom",
     "testTimeout": 30000,
     "transform": {
-      "^.+\\.(js|jsx|ts|tsx)$": "<rootDir>/node_modules/babel-jest",
       "^(?!.*\\.(js|jsx|ts|tsx|css|json)$)": "<rootDir>/src/config/jest/fileTransform.js"
     },
     "transformIgnorePatterns": [
@@ -88,43 +87,10 @@
       "<rootDir>/src/routes/"
     ]
   },
-  "babel": {
-    "presets": [
-      "@babel/preset-react",
-      [
-        "@babel/preset-env",
-        {
-          "targets": {
-            "node": "current"
-          }
-        }
-      ]
-    ],
-    "env": {
-      "production": {
-        "plugins": [
-          [
-            "react-remove-properties",
-            {
-              "properties": [
-                "data-test",
-                "data-testid"
-              ]
-            }
-          ]
-        ]
-      }
-    }
-  },
   "devDependencies": {
-    "@babel/core": "^7.18.0",
-    "@babel/eslint-parser": "^7.17.0",
-    "@babel/preset-env": "^7.18.0",
-    "@babel/preset-react": "^7.17.12",
     "@testing-library/jest-dom": "^5.16.4",
     "@testing-library/react": "^11.2.7",
     "@testing-library/user-event": "^13.5.0",
-    "babel-plugin-react-remove-properties": "^0.3.0",
     "cross-env": "^7.0.3",
     "eslint": "^8.16.0",
     "eslint-config-airbnb": "^19.0.4",

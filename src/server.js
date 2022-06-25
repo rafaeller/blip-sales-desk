@@ -27,14 +27,27 @@ const TYPE_TEXT = "text/plain";
 const BOT_HEADERS = {
     headers: {
         "Content-Type": "application/json",
-        "Authorization": "<BOT KEY>"
+        "Authorization": "<BOT_KEY>"
     }
 }
 
 const CONTENT_MODERATOR_HEADERS = {
     "Content-Type": "text/plain",
-    "Ocp-Apim-Subscription-Key": "<AZERE KEY>",
+    "Ocp-Apim-Subscription-Key": "<CONTENT_MODERATOR_KEY>",
     "charset": "utf-8"
+}
+
+const QNA_HEADERS = {
+    "Content-Type": "application/json",
+    "Authorization": "<QNA_KEY>"
+}
+
+const requestQnaAsync = async(input) => {
+    response = await instance.post('https://qna-cda-poc.azurewebsites.net/qnamaker/knowledgebases/8b74e07c-f366-4c3e-8272-e2d328f64003/generateAnswer',
+        {"question":input},
+        {headers: QNA_HEADERS});
+    console.log(response.data);
+    return response.data
 }
 
 
@@ -43,6 +56,64 @@ const checkContentModeratorAsync = async(input) => {
         input,
         {headers: CONTENT_MODERATOR_HEADERS});
     return response.data
+}
+
+const copilotUserInputAsync = async(input, ticket) => {
+    if ( ["copilot", "autopilot"].includes(ticket.copilotStatus) ) {
+        qna = await requestQnaAsync(input)
+        console.log(qna);
+        if(qna['answers'][0]['score'] > 60){
+            await new Promise(r => setTimeout(r, 3000));
+            answer = qna['answers'][0]['answer']
+            await sendCopilotContent(answer, ticket, ticket.copilotStatus === "autopilot" ? 3000 : 1, "copilot/response")
+            if(ticket.copilotStatus === "copilot") {
+                io.to(ticket.socketId).emit("recivedMessage", {
+                    from: ticket.copilotStatus,
+                    ticketId: ticket.ticketId,
+                    content: answer,
+                    type: 'copilot/options'
+                });
+            }
+        }
+    }
+}
+
+const sendCopilotContent = async(input, ticket, time, type) => {
+    messages = input.split('~~');
+    for (let msg of messages){
+        await new Promise(r => setTimeout(r, time));
+        if(msg.includes('|')){
+            splitedMsg = msg.split('|')
+            content = {
+                "type": splitedMsg[0],
+                "uri": splitedMsg[1],
+            };
+            if(ticket.copilotStatus === "autopilot" || type === "copilot/message") {
+                sendMessage(ticketId, content, "application/vnd.lime.media-link+json");
+            }
+            if(type === "copilot/response") { 
+                io.to(ticket.socketId).emit("recivedMessage", {
+                    from: ticket.copilotStatus,
+                    ticketId: ticket.ticketId,
+                    content: splitedMsg[1],
+                    type: splitedMsg[0]
+                }); 
+            }
+        }
+        else{
+            if(ticket.copilotStatus === "autopilot" || type === "copilot/message") {
+                sendMessage(ticketId, msg);
+            }
+            if(type === "copilot/response") { 
+                io.to(ticket.socketId).emit("recivedMessage", {
+                    from: ticket.copilotStatus,
+                    ticketId: ticket.ticketId,
+                    content: msg,
+                    type: 'text/plain'
+                });
+            }
+        }
+    }
 }
 
 function openTicket(ticketId) {
@@ -66,21 +137,13 @@ function openTicket(ticketId) {
         });
 }
 
-function sendMessage(ticketId, content) {
+function sendMessage(ticketId, content, contentType = "text/plain") {
     axios.post('https://http.msging.net/messages', {
-        "type": "text/plain",
+        "type": contentType,
         "content": content,
         "id": uuid.v4(),
         "to": `${ticketId}@desk.msging.net/Webhook`
     }, BOT_HEADERS)
-        .then(function (response) {
-            console.log({
-                "type": "text/plain",
-                "content": content,
-                "id": uuid.v4(),
-                "to": `${ticketId}@desk.msging.net/Webhook`
-            });
-        })
         .catch(function (error) {
             console.log(error);
         });
@@ -149,14 +212,13 @@ app.use('/webhook', (req, res) => {
     ticketId = req.body.from.split("@")[0];
     ticket = getTicket(ticketId);
     if (req.body.type === TYPE_TEXT && ticket) {
-        io.to(ticket.socketId).emit("recivedMessage", { type: 'customer', ticketId: ticket.ticketId, content: req.body.content })
+        io.to(ticket.socketId).emit("recivedMessage", { from: 'user', ticketId: ticket.ticketId, content: req.body.content });
+        copilotUserInputAsync(req.body.content, ticket);
         res.sendStatus(200);
     }
-
 })
 
 let tickets = [];
-
 
 const getTicket = (ticketId) => {
     return tickets.find((ticket) => ticket.ticketId === ticketId);
@@ -164,11 +226,11 @@ const getTicket = (ticketId) => {
 
 const addTicket = (ticketId, socketId) => {
     !tickets.some((ticket) => ticket.ticketId === ticketId) &&
-        tickets.push({ ticketId, socketId });
+        tickets.push({ ticketId, socketId, copilotStatus: "copilot" });
 };
 
 const removeTicket = (socketId) => {
-    tickets = tickets.filter((ticket) => ticket.socketId !== socketId)
+    tickets = tickets.filter((ticket) => ticket.socketId !== socketId);
 };
 
 io.on('connection', socket => {
@@ -190,16 +252,25 @@ io.on('connection', socket => {
     });
 
     socket.on('sendMessage', async (data) => {
-        contentModerator = await checkContentModeratorAsync(data.content)
-        console.log(contentModerator)
+        contentModerator = await checkContentModeratorAsync(data.content);
+        console.log(contentModerator);
         if (contentModerator.Terms === null) {
-            data.content = contentModerator.AutoCorrectedText
-            sendMessage(data.ticketId, data.content)
-            io.to(socket.id).emit("recivedMessage", data)
+            data.content = contentModerator.AutoCorrectedText;
+            sendMessage(data.ticketId, data.content);
+            io.to(socket.id).emit("recivedMessage", data);
             console.log(data);
         }else{
             console.log('mensagem ofensiva');
+            io.to(socket.id).emit("recivedMessage", { from: 'forbiden', ticketId: data.ticketId, content: data.content, type: "text/plain" });
         }
+    });
+
+    socket.on('sendCopilotMessage', async (data) => {
+        console.log(data);
+        ticket = getTicket(data.ticketId);
+        await sendCopilotContent(data.content, ticket, 3000, "copilot/message");
+        await new Promise(r => setTimeout(r, 1000));
+        getLastMessages(data.customerIdentity, socket.id);
     });
 })
 

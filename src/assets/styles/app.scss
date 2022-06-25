@@ -137,6 +137,7 @@ h4 {
 .sidebar-chats {
     height: calc(100vh - 115px);
     overflow-y: scroll;
+    overflow-x: hidden;
 }
 
 .sidebar-chat {
@@ -213,6 +214,21 @@ h4 {
     background-color: #B3D4FF;
 }
 
+.chat-sent-copilot {
+    margin-left: auto;
+    background-color: #c4c4c4;
+}
+
+.chat-sent-autoilot {
+    margin-left: auto;
+    background-color: #2a9cf9;
+}
+
+.chat-sent-forbiden {
+    margin-left: auto;
+    background-color: #ff6565;
+}
+
 .chat-timestamp {
     margin-left: 10px;
     font-size: 10px;
@@ -245,3 +261,14 @@ h4 {
     border-radius: 20px;
     font-size: 15px;
 }
+
+.message-image {
+    object-fit: cover;
+    border-radius: 6px;
+    height: 30vw;
+    max-height: 300px;
+    max-width: 300px;
+    min-height: 200px;
+    min-width: 200px;
+    display: block;
+  }

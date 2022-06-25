@@ -15,7 +15,7 @@ const Home = () => {
     const [tickets, setTickets] = useState([]);
     const [ticketId, setTicketId] = useState('');
     const [customerName, setCustomerName] = useState('Customer Name');
-
+    const [customerIdentity, setCustomerIdentity] = useState('');
 
     useEffect(() => {
         const newSocket = io.connect(`http://localhost:3000`);
@@ -28,14 +28,24 @@ const Home = () => {
             socket.on('recivedMessage', addMessage);
             socket.on('openTickets', (data) => setTickets(data));
             socket.on('lastMessages', (data) => setMessages(data.filter(
-                (message) => message.type === "text/plain")
-                .map((message) => (
-                    {
+                (message) => ["text/plain", "application/vnd.lime.media-link+json"].includes(message.type))
+                .map((message) => {
+                    console.log(message);
+                    if(message.type === "application/vnd.lime.media-link+json"){
+                        return {
+                            type: message.content.type,
+                            content: message.content.uri,
+                            from: message.direction === "received" ? "user" : "agent",
+                            time: "19:30"
+                        } 
+                    }
+                    return {
+                        type: "text/plain",
                         content: message.content,
-                        type: message.direction === "received" ? "user" : "agent",
+                        from: message.direction === "received" ? "user" : "agent",
                         time: "19:30"
                     }
-                ))));
+                })));
         }
     }, [socket]);
 
@@ -48,7 +58,7 @@ const Home = () => {
         if (socket && input !== '') {
             const message = {
                 content: input,
-                type: "agent",
+                from: "agent",
                 ticketId
             };
             socket.emit('sendMessage', message);
@@ -93,7 +103,7 @@ const Home = () => {
                                     avatar: avatar.toString(),
                                     message: {
                                         content: "oi",
-                                        type: "agent",
+                                        from: "agent",
                                         time: "19:30"
                                     }
                                 }}
@@ -101,6 +111,7 @@ const Home = () => {
                                     console.log(ticket);
                                     setTicketId(ticket.id);
                                     setCustomerName(ticket.customerName ? ticket.customerName : ticket.id);
+                                    setCustomerIdentity(ticket.customerIdentity);
                                     socket.emit('ticketConnect', {
                                         ticketId: ticket.id,
                                         customerIdentity: ticket.customerIdentity
@@ -131,7 +142,7 @@ const Home = () => {
                 </div>
                 <div className="message-content">
                     {
-                        messages.map((message) => (<Message message={message} />))
+                        messages.map((message) => (<Message message={message} socket={socket} ticketId={ticketId} customerIdentity={customerIdentity} />))
                     }
                 </div>
                 <div id="chat" className="message-footer">
